@@ -2,60 +2,96 @@ import pandas as pd
 import os
 import logging
 from tabula import read_pdf  
+import tabula
+import tkinter as tk
+from tkinter import filedialog, messagebox
 
 # Configure logging
 logging.basicConfig(filename="pdf_conversion.log", level=logging.INFO, 
                     format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Define source and output directories
-PDF_DIR = "path_to_pdf_files"  # Change to actual PDF folder path
-OUTPUT_DIR = "path_to_output_files"  # Change to actual output folder path
-OUTPUT_FORMAT = "xlsx"  # Change to 'csv' if needed
+# Define a class that holds the GUI for the conversion
+class PDFConverterApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("PDF to Excel/CSV Converter")
+        self.root.geometry("400x200")
+        self.root.resizable(False, False)
 
-def process_pdf_files():
-    """Scans the PDF directory and converts each PDF file to the desired format."""
-    try:
-        if not os.path.exists(OUTPUT_DIR):
-            os.makedirs(OUTPUT_DIR)  # Ensure output directory exists
-        
-        pdf_files = [f for f in os.listdir(PDF_DIR) if f.lower().endswith(".pdf")]
+        # Label - File Selection
+        self.label = tk.Label(root, text="Select a PDF file to convert:")
+        self.label.pack(pady=10)
 
-        if not pdf_files:
-            logging.info("No PDF files found for processing.")
+        # Button - Choose file
+        self.select_button = tk.Button(root, text="Choose PDF file", command=self.select_pdf_file)
+        self.select_button.pack(pady=5)
+
+        # Dropdown - Choose output format
+        self.format_var = tk.StringVar(root)
+        self.format_var.set("xlsx") # Default to microsoft excel format
+        self.format_label = tk.Label(root, text="Select output format:")
+        self.format_label.pack(pady=5)
+        self.format_dropdown = tk.OptionMenu(root, self.format_var, "xlsx", "csv")
+        self.format_dropdown.pack(pady=5)
+
+        # Button - Covert the pdf
+        self.convert_button = tk.Button(root, text="Convert", command=self.convert_pdf)
+        self.convert_button.pack(pady=10)
+
+        # File path storage
+        self.pdf_file = None
+
+    # Method to select the pdf file
+    def select_pdf_file(self):
+        """Opens a file dialog for the user to select a PDF file."""
+        file_path = filedialog.askopenfilename(title="Select a PDF file", filetypes=[("PDF Files", "*.pdf")])
+        if file_path:
+            self.pdf_file = file_path
+            messagebox.showinfo("File selected", f"Selected file:\n{self.pdf_file}")
+
+    # Method for conversion
+    def convert_pdf(self):
+        """Converts the selected PDF file to the chosen format."""
+        if not self.pdf_file:
+            messagebox.showwarning("No file selected", "Please select a PDF file first.")
             return
 
-        for pdf_file in pdf_files:
-            pdf_path = os.path.join(PDF_DIR, pdf_file)
-            convert_pdf(pdf_path)
+        output_format = self.format_var.get()
+        try:
+            logging.info(f"Processing: {self.pdf_file}")
 
-    except Exception as e:
-        logging.error(f"Error processing PDF files: {str(e)}")
+            # Extracting tables from the PDF
+            tables = tabula.read_pdf(self.pdf_file, pages='all', multiple_tables=True)  
 
-def convert_pdf(pdf_file):
-    """Converts a single PDF file to an Excel or CSV file."""
-    try:
-        tables = read_pdf(pdf_file, pages="all", multiple_tables=True)  
+            if not tables:
+                logging.warning(f"No tables found in {self.pdf_file}. Skipping...")
+                messagebox.showwarning("No tables found", f"No tables found in {self.pdf_file}.")
+                return
+            
+            # Combine all tables into a single DataFrame
+            combined_df = pd.concat(tables, ignore_index=True)
 
-        if not tables:
-            logging.warning(f"No tables found in {pdf_file}. Skipping...")
-            return
+            # Define output file path (same as the source pdf file)
+            output_file = os.path.splitext(self.pdf_file)[0] + "." + output_format
 
-        combined_df = pd.concat(tables)
-        output_file = os.path.join(OUTPUT_DIR, os.path.splitext(os.path.basename(pdf_file))[0] + "." + OUTPUT_FORMAT)
+            # Save as excel or csv
+            if output_format == "xlsx":
+                combined_df.to_excel(output_file, index=False)
+            elif output_format == "csv":
+                combined_df.to_csv(output_file, index=False)
+            else:
+                logging.error(f"Invalid output format: {output_format}")
+                return
+            
+            logging.info(f"Successfully converted {self.pdf_file} to {output_file}")
+            messagebox.showinfo("Conversion successful", f"File saved as {output_file}")
 
-        if OUTPUT_FORMAT == "xlsx":
-            combined_df.to_excel(output_file, index=False)
-        elif OUTPUT_FORMAT == "csv":
-            combined_df.to_csv(output_file, index=False)
-        else:
-            logging.error(f"Invalid output format: {OUTPUT_FORMAT}")
-            return
-        
-        logging.info(f"Successfully converted {pdf_file} to {output_file}")
+        except Exception as e:
+            logging.error(f"Error converting {self.pdf_file}: {str(e)}")
+            messagebox.showerror("Conversion failed", f"An error occurred: {str(e)}")
 
-    except Exception as e:
-        logging.error(f"Failed to convert {pdf_file}: {str(e)}")
-
-# Run the script
+# Main function to run the GUI
 if __name__ == "__main__":
-    process_pdf_files()
+    root = tk.Tk()
+    app = PDFConverterApp(root)
+    root.mainloop()
