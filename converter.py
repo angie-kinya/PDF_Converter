@@ -1,4 +1,5 @@
 import pandas as pd
+import pdfplumber
 import os
 import logging
 from tabula import read_pdf  
@@ -58,37 +59,36 @@ class PDFConverterApp:
 
         output_format = self.format_var.get()
         try:
-            logging.info(f"Processing: {self.pdf_file}")
+            all_tables = []
 
-            # Extracting tables from the PDF
-            tables = tabula.read_pdf(self.pdf_file, pages='all', multiple_tables=True)  
+            with pdfplumber.open(self.pdf_file) as pdf:
+                for page in pdf.pages:
+                    table = page.extract_table()
+                    if table:
+                        df = pd.DataFrame(table[1:], columns=table[0])
+                        all_tables.append(df)
 
-            if not tables:
-                logging.warning(f"No tables found in {self.pdf_file}. Skipping...")
-                messagebox.showwarning("No tables found", f"No tables found in {self.pdf_file}.")
+            if not all_tables:
+                messagebox.showwarning("No Tables Found", "No tabular data found in the PDF.")
                 return
-            
-            # Combine all tables into a single DataFrame
-            combined_df = pd.concat(tables, ignore_index=True)
 
-            # Define output file path (same as the source pdf file)
+            final_df = pd.concat(all_tables)
             output_file = os.path.splitext(self.pdf_file)[0] + "." + output_format
 
-            # Save as excel or csv
+            if final_df.index.duplicated().any():
+                final_df = final_df.reset_index(drop=True)
+                logging.warning("Duplicate index found. Resetting index.")
+                messagebox.showinfo("Duplicate Index", "Duplicate index found. Resetting index.")
+                
             if output_format == "xlsx":
-                combined_df.to_excel(output_file, index=False)
+                final_df.to_excel(output_file, index=False)
             elif output_format == "csv":
-                combined_df.to_csv(output_file, index=False)
-            else:
-                logging.error(f"Invalid output format: {output_format}")
-                return
-            
-            logging.info(f"Successfully converted {self.pdf_file} to {output_file}")
-            messagebox.showinfo("Conversion successful", f"File saved as {output_file}")
+                final_df.to_csv(output_file, index=False)
+
+            messagebox.showinfo("Conversion Successful", f"File saved as:\n{output_file}")
 
         except Exception as e:
-            logging.error(f"Error converting {self.pdf_file}: {str(e)}")
-            messagebox.showerror("Conversion failed", f"An error occurred: {str(e)}")
+            messagebox.showerror("Error", f"Conversion failed:\n{str(e)}")
 
 # Main function to run the GUI
 if __name__ == "__main__":
